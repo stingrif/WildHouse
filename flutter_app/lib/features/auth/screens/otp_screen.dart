@@ -2,18 +2,23 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/router/app_router.dart';
+import '../../../core/providers/app_providers.dart';
 
-class OtpScreen extends StatefulWidget {
+class OtpScreen extends ConsumerStatefulWidget {
   final String phone;
-  const OtpScreen({super.key, required this.phone});
+  final String verificationId;
+  
+  const OtpScreen({super.key, required this.phone, required this.verificationId});
 
   @override
-  State<OtpScreen> createState() => _OtpScreenState();
+  ConsumerState<OtpScreen> createState() => _OtpScreenState();
 }
 
-class _OtpScreenState extends State<OtpScreen> {
+class _OtpScreenState extends ConsumerState<OtpScreen> {
   final _controllers = List.generate(6, (_) => TextEditingController());
   final _focusNodes  = List.generate(6, (_) => FocusNode());
   bool _loading = false;
@@ -30,9 +35,32 @@ class _OtpScreenState extends State<OtpScreen> {
 
   void _verify() async {
     setState(() { _loading = true; _error = null; });
-    await Future.delayed(const Duration(milliseconds: 1200)); // TODO: Firebase verifyOTP
-    setState(() => _loading = false);
-    if (mounted) context.go(AppRoutes.catalog);
+    
+    try {
+      final credential = PhoneAuthProvider.credential(
+        verificationId: widget.verificationId,
+        smsCode: _code,
+      );
+      
+      await FirebaseAuth.instance.signInWithCredential(credential);
+      
+      // Update global auth state on success
+      ref.read(authProvider.notifier).state = true;
+      
+      setState(() => _loading = false);
+      if (mounted) context.go(AppRoutes.catalog);
+      
+    } on FirebaseAuthException catch (e) {
+      setState(() {
+        _loading = false;
+        _error = e.message ?? 'Неверный СМС-код';
+      });
+    } catch (e) {
+      setState(() {
+        _loading = false;
+        _error = 'Непредвиденная ошибка';
+      });
+    }
   }
 
   @override
@@ -104,7 +132,9 @@ class _OtpScreenState extends State<OtpScreen> {
             const SizedBox(height: 16),
             Center(
               child: TextButton(
-                onPressed: () {}, // TODO: resend
+                onPressed: () {
+                   ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('SMS отправлено повторно (Дэмо)')));
+                },
                 child: const Text('Отправить снова'),
               ),
             ),

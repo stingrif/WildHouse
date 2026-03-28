@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/router/app_router.dart';
+import 'package:flutter_gen/gen_l10n/app_localizations.dart';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/providers/app_providers.dart';
@@ -12,6 +13,8 @@ class CartScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final t = Theme.of(context).textTheme;
+    final loc = AppLocalizations.of(context)!;
+    
     final cartItems = ref.watch(cartProvider);
     final cartNotifier = ref.read(cartProvider.notifier);
     
@@ -20,8 +23,17 @@ class CartScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Корзина'),
+        title: Text(loc.cartTitle),
         actions: [
+          // Кнопка смены локализации (Ручной тумблер)
+          IconButton(
+            icon: const Icon(Icons.language, color: AppColors.walnut, size: 20),
+            onPressed: () {
+              final currentLabel = ref.read(localeProvider).languageCode;
+              final next = currentLabel == 'ru' ? 'en' : (currentLabel == 'en' ? 'he' : 'ru');
+              ref.read(localeProvider.notifier).setLocale(Locale(next));
+            },
+          ),
           TextButton.icon(
             icon: const Icon(Icons.currency_exchange, color: AppColors.walnut, size: 18),
             label: Text(currencyType == AppCurrency.ils ? '₪ ILS' : '\$ USD', style: const TextStyle(color: AppColors.walnut)),
@@ -34,7 +46,7 @@ class CartScreen extends ConsumerWidget {
         padding: const EdgeInsets.all(16),
         children: [
           if (cartItems.isEmpty)
-            const Center(child: Padding(padding: EdgeInsets.all(32.0), child: Text("Корзина пуста"))),
+            Center(child: Padding(padding: const EdgeInsets.all(32.0), child: Text(loc.cartEmpty))),
             
           ...cartItems.map((item) => Padding(
             padding: const EdgeInsets.only(bottom: 12.0),
@@ -52,10 +64,10 @@ class CartScreen extends ConsumerWidget {
           // Promo code
           TextField(
             decoration: InputDecoration(
-              hintText: 'Промокод',
+              hintText: loc.promoCode,
               suffixIcon: TextButton(
                 onPressed: () {},
-                child: const Text('Применить'),
+                child: Text(loc.applyPromo),
               ),
             ),
           ),
@@ -69,12 +81,12 @@ class CartScreen extends ConsumerWidget {
               border: Border.all(color: AppColors.sandDark),
             ),
             child: Column(children: [
-              _SummaryRow('Материал', currencyFormatter.format(cartNotifier.materialSubtotal)),
-              _SummaryRow('Установка', currencyFormatter.format(cartNotifier.installSubtotal)),
-              _SummaryRow('НДС 18%', currencyFormatter.format(cartNotifier.vat)),
+              _SummaryRow(loc.materialLbl, currencyFormatter.format(cartNotifier.materialSubtotal)),
+              _SummaryRow(loc.installLbl, currencyFormatter.format(cartNotifier.installSubtotal)),
+              _SummaryRow('${loc.vatLbl} 18%', currencyFormatter.format(cartNotifier.vat)),
               const Divider(height: 16),
               Row(children: [
-                Text('ИТОГО', style: t.titleLarge?.copyWith(fontWeight: FontWeight.w700)),
+                Text(loc.totalLbl, style: t.titleLarge?.copyWith(fontWeight: FontWeight.w700)),
                 const Spacer(),
                 Text(currencyFormatter.format(cartNotifier.total), style: t.headlineSmall?.copyWith(color: AppColors.walnut)),
               ]),
@@ -83,7 +95,7 @@ class CartScreen extends ConsumerWidget {
           const SizedBox(height: 20),
           ElevatedButton(
             onPressed: () => context.push(AppRoutes.order),
-            child: const Text('ОФОРМИТЬ ЗАКАЗ'),
+            child: Text(loc.checkoutBtn),
           ),
         ],
       ),
@@ -107,6 +119,7 @@ class _CartItem extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final t = Theme.of(context).textTheme;
+    final loc = AppLocalizations.of(context)!;
     final currencyFormatter = ref.read(currencyProvider.notifier);
     
     final total = area * pricePerM2 * 1.18 + (installIncluded ? installPrice : 0);
@@ -129,7 +142,7 @@ class _CartItem extends ConsumerWidget {
           Text('${area.toStringAsFixed(1)} м²  •  ${currencyFormatter.format(pricePerM2)}/м²',
             style: t.bodySmall),
           if (installIncluded)
-            Text('+ установка ${currencyFormatter.format(installPrice)}',
+            Text('+ ${loc.installLbl} ${currencyFormatter.format(installPrice)}',
               style: t.bodySmall?.copyWith(color: AppColors.moss)),
         ])),
         Column(crossAxisAlignment: CrossAxisAlignment.end, children: [

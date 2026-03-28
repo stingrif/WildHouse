@@ -1,6 +1,7 @@
 // lib/features/auth/screens/login_screen.dart
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/router/app_router.dart';
 
@@ -16,11 +17,44 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _loading = false;
 
   void _sendOtp() async {
-    if (_phoneCtrl.text.trim().isEmpty) return;
+    final phone = _phoneCtrl.text.trim();
+    if (phone.isEmpty) return;
+    
     setState(() => _loading = true);
-    await Future.delayed(const Duration(seconds: 1)); // TODO: Firebase Auth OTP
-    setState(() => _loading = false);
-    if (mounted) context.push(AppRoutes.otp, extra: _phoneCtrl.text.trim());
+
+    try {
+      await FirebaseAuth.instance.verifyPhoneNumber(
+        phoneNumber: phone,
+        verificationCompleted: (PhoneAuthCredential credential) async {
+          // Автоматическая верификация (чаще работает на Android)
+          await FirebaseAuth.instance.signInWithCredential(credential);
+          if (mounted) context.go(AppRoutes.catalog);
+        },
+        verificationFailed: (FirebaseAuthException e) {
+          setState(() => _loading = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(e.message ?? 'Ошибка авторизации'), backgroundColor: AppColors.error),
+          );
+        },
+        codeSent: (String verificationId, int? resendToken) {
+          setState(() => _loading = false);
+          if (mounted) {
+            context.push(AppRoutes.otp, extra: {
+              'phone': phone,
+              'vid': verificationId
+            });
+          }
+        },
+        codeAutoRetrievalTimeout: (String verificationId) {
+          // Timeout
+        },
+      );
+    } catch (e) {
+      setState(() => _loading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Произошла ошибка: $e'), backgroundColor: AppColors.error),
+      );
+    }
   }
 
   @override

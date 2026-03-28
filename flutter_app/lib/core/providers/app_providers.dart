@@ -71,3 +71,15 @@ final cartProvider = StateNotifierProvider<CartNotifier, List<CartItemModel>>((r
 
 // --- Auth State Logic ---
 final authProvider = StateProvider<bool>((ref) => false);
+
+// --- Locale Logic (i18n) ---
+class LocaleNotifier extends StateNotifier<Locale> {
+  LocaleNotifier() : super(const Locale('ru'));
+
+  void setLocale(Locale newLocale) {
+    if (['ru', 'en', 'he'].contains(newLocale.languageCode)) {
+      state = newLocale;
+    }
+  }
+}
+final localeProvider = StateNotifierProvider<LocaleNotifier, Locale>((ref) => LocaleNotifier());

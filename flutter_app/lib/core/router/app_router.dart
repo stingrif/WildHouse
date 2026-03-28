@@ -29,7 +29,7 @@ abstract class AppRoutes {
 }
 
 final appRouter = GoRouter(
-  initialLocation: AppRoutes.catalog,
+  initialLocation: AppRoutes.login, // TODO: Check auth state to redirect
   debugLogDiagnostics: true,
   routes: [
     // ── Auth flow ────────────────────────────────────────────
@@ -41,7 +41,13 @@ final appRouter = GoRouter(
     GoRoute(
       path: AppRoutes.otp,
       name: 'otp',
-      pageBuilder: (ctx, state) => _slide(OtpScreen(phone: state.extra as String)),
+      pageBuilder: (ctx, state) {
+        final map = state.extra as Map<String, dynamic>? ?? {};
+        return _slide(OtpScreen(
+          phone: map['phone'] as String? ?? '', 
+          verificationId: map['vid'] as String? ?? ''
+        ));
+      },
     ),
 
     // ── Main shell (bottom nav) ──────────────────────────────

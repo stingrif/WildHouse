@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/providers/app_providers.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/router/app_router.dart';
+import 'package:flutter_gen/gen_l10n/app_localizations.dart';
 
 class CalculatorScreen extends ConsumerStatefulWidget {
   const CalculatorScreen({super.key});
@@ -36,7 +37,7 @@ class _CalculatorScreenState extends ConsumerState<CalculatorScreen> {
   static const double _installPriceLarge = 1000;
   static const double _vatRate      = 0.18;
   static const double _tokenDisc    = 0.15;
-  static const double _waste        = 0.10; // +10% запас
+  static const double _waste        = 0.10; 
 
   double get _area {
     final l = double.tryParse(_lengthCtrl.text) ?? 0;
@@ -58,7 +59,7 @@ class _CalculatorScreenState extends ConsumerState<CalculatorScreen> {
   double get _total => _subtotal - _discount + _vat;
 
   void _simulatePdfUpload() async {
-    setState(() { _isParsingPdf = true; _parsedPdfLog = 'Читаем PDF (ru, en, he)...'; });
+    setState(() { _isParsingPdf = true; _parsedPdfLog = 'Loading...'; });
     
     await Future.delayed(const Duration(seconds: 2));
     
@@ -66,7 +67,7 @@ class _CalculatorScreenState extends ConsumerState<CalculatorScreen> {
       _isParsingPdf = false;
       _lengthCtrl.text = '6.0';
       _widthCtrl.text = '4.5';
-      _parsedPdfLog = 'План успешо распознан! Языки: [ru, he].\nШирина: 4.5м, Длина: 6.0м';
+      _parsedPdfLog = 'План успешо распознан! [ru, he]\nШирина: 4.5м, Длина: 6.0м';
     });
     
     if (mounted) {
@@ -79,6 +80,7 @@ class _CalculatorScreenState extends ConsumerState<CalculatorScreen> {
   @override
   Widget build(BuildContext context) {
     final t = Theme.of(context).textTheme;
+    final loc = AppLocalizations.of(context)!;
     final hasArea = _area > 0;
     
     final currencyType = ref.watch(currencyProvider);
@@ -86,12 +88,20 @@ class _CalculatorScreenState extends ConsumerState<CalculatorScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Калькулятор с PDF'),
+        title: Text(loc.calculatorTitle),
         leading: IconButton(
           icon: const Icon(Icons.close_rounded),
           onPressed: () => context.pop(),
         ),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.language, color: AppColors.walnut, size: 20),
+            onPressed: () {
+              final currentLabel = ref.read(localeProvider).languageCode;
+              final next = currentLabel == 'ru' ? 'en' : (currentLabel == 'en' ? 'he' : 'ru');
+              ref.read(localeProvider.notifier).setLocale(Locale(next));
+            },
+          ),
           TextButton.icon(
             icon: const Icon(Icons.currency_exchange, color: AppColors.walnut, size: 18),
             label: Text(currencyType == AppCurrency.ils ? '₪ ILS' : '\$ USD', style: const TextStyle(color: AppColors.walnut)),
@@ -106,7 +116,7 @@ class _CalculatorScreenState extends ConsumerState<CalculatorScreen> {
           ElevatedButton.icon(
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.oakLight, foregroundColor: AppColors.walnut),
             icon: _isParsingPdf ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.picture_as_pdf),
-            label: Text(_isParsingPdf ? 'Анализируем...' : 'Загрузить план комнаты (PDF)'),
+            label: Text(_isParsingPdf ? '...' : loc.pdfUploadBtn),
             onPressed: _isParsingPdf ? null : _simulatePdfUpload,
           ),
           if (_parsedPdfLog != null)
@@ -117,25 +127,25 @@ class _CalculatorScreenState extends ConsumerState<CalculatorScreen> {
 
           const SizedBox(height: 24),
 
-          Text('Площадь помещения', style: t.titleLarge),
+          Text(loc.roomAreaLbl, style: t.titleLarge),
           const SizedBox(height: 12),
           Row(children: [
-            Expanded(child: _NumField(ctrl: _lengthCtrl, label: 'Длина (м)', onChanged: (_) => setState((){}))),
+            Expanded(child: _NumField(ctrl: _lengthCtrl, label: loc.lengthLbl, onChanged: (_) => setState((){}))),
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: 12),
               child: Text('×', style: TextStyle(fontSize: 24, color: AppColors.oak)),
             ),
-            Expanded(child: _NumField(ctrl: _widthCtrl, label: 'Ширина (м)', onChanged: (_) => setState((){}))),
+            Expanded(child: _NumField(ctrl: _widthCtrl, label: loc.widthLbl, onChanged: (_) => setState((){}))),
           ]),
           
           if (hasArea) ...[
             const SizedBox(height: 8),
-            _InfoChip('Текущая площадь: ${_area.toStringAsFixed(2)} м²  →  с запасом +10%: ${_areaWithWaste.toStringAsFixed(2)} м²'),
+            _InfoChip('${_area.toStringAsFixed(2)} м²  →  +10%: ${_areaWithWaste.toStringAsFixed(2)} м²'),
           ],
 
           const SizedBox(height: 24),
 
-          Text('Выбор товара ОНЛАЙН', style: t.titleLarge),
+          Text(loc.catalogOnlineItem, style: t.titleLarge),
           const SizedBox(height: 12),
           DropdownButtonFormField<Map<String, dynamic>>(
             value: _selectedItem,
@@ -156,16 +166,16 @@ class _CalculatorScreenState extends ConsumerState<CalculatorScreen> {
 
           const SizedBox(height: 24),
 
-          Text('Опции монтажа', style: t.titleLarge),
+          Text(loc.installLbl, style: t.titleLarge),
           const SizedBox(height: 8),
           _SwitchRow(
-            label: 'Включить установку',
-            subtitle: _area <= 13 ? '${currencyFormatter.format(_installPriceSmall)} (до 13 м²)' : currencyFormatter.format(_installPriceLarge),
+            label: loc.installOptLbl,
+            subtitle: _area <= 13 ? '${currencyFormatter.format(_installPriceSmall)} (< 13 м²)' : currencyFormatter.format(_installPriceLarge),
             value: _includeInstall,
             onChanged: (v) => setState(() => _includeInstall = v),
           ),
           _SwitchRow(
-            label: 'НДС 18%',
+            label: '${loc.vatLbl} 18%',
             value: _includeVat,
             onChanged: (v) => setState(() => _includeVat = v),
           ),
@@ -203,7 +213,7 @@ class _CalculatorScreenState extends ConsumerState<CalculatorScreen> {
                 ));
                 context.push(AppRoutes.cart);
               },
-              child: const Text('ДОБАВИТЬ В КОРЗИНУ ОНЛАЙН'),
+              child: Text(loc.addOnlineCart),
             ),
         ],
       ),
@@ -282,6 +292,7 @@ class _ResultCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = Theme.of(context).textTheme;
+    final loc = AppLocalizations.of(context)!;
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -290,15 +301,15 @@ class _ResultCard extends StatelessWidget {
         border: Border.all(color: AppColors.sandDark),
       ),
       child: Column(children: [
-        Text('Чек-смета ($selectedItemName)', style: t.headlineSmall, textAlign: TextAlign.center),
+        Text(selectedItemName, style: t.headlineSmall, textAlign: TextAlign.center),
         const Divider(height: 20),
-        _Row('Материал (${area.toStringAsFixed(1)} м²)', formatter(materialCost)),
-        if (installCost > 0) _Row('Установка', formatter(installCost)),
-        if (discount > 0) _Row('Скидка 15% (токен)', '− ${formatter(discount)}', valueColor: AppColors.moss),
-        if (vat > 0) _Row('НДС 18%', formatter(vat)),
+        _Row('${loc.materialLbl} (${area.toStringAsFixed(1)} м²)', formatter(materialCost)),
+        if (installCost > 0) _Row(loc.installLbl, formatter(installCost)),
+        if (discount > 0) _Row('Discount', '− ${formatter(discount)}', valueColor: AppColors.moss),
+        if (vat > 0) _Row('${loc.vatLbl} 18%', formatter(vat)),
         const Divider(height: 20),
         Row(children: [
-          Text('ИТОГО', style: t.titleLarge?.copyWith(fontWeight: FontWeight.w700)),
+          Text(loc.totalLbl, style: t.titleLarge?.copyWith(fontWeight: FontWeight.w700)),
           const Spacer(),
           Text(formatter(total), style: t.headlineMedium?.copyWith(color: AppColors.walnut)),
         ]),

@@ -4,6 +4,7 @@ import 'package:vector_math/vector_math_64.dart' as vector;
 import '../../../core/constants/app_colors.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/providers/app_providers.dart';
+import 'package:flutter_gen/gen_l10n/app_localizations.dart';
 
 class ArScreen extends ConsumerStatefulWidget {
   final String? productId;
@@ -63,24 +64,6 @@ class _ArScreenState extends ConsumerState<ArScreen> {
 
     arCoreController?.addArCoreNodeWithAnchor(node);
     setState(() => _placedNodes.add(node));
-    
-    // Auto-close Snackbar for optimization
-    ScaffoldMessenger.of(context).hideCurrentSnackBar();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('$activeCategory размещен. Материал: ${textureData['name']}'),
-        duration: const Duration(milliseconds: 800),
-        action: SnackBarAction(label: 'ОТМЕНИТЬ', onPressed: _undoLastNode),
-      ),
-    );
-  }
-
-  void _undoLastNode() {
-    if (_placedNodes.isNotEmpty) {
-      final last = _placedNodes.removeLast();
-      arCoreController?.removeNode(nodeName: last.name!);
-      setState(() {});
-    }
   }
 
   void _clearAllNodes() {
@@ -97,23 +80,24 @@ class _ArScreenState extends ConsumerState<ArScreen> {
   void _changeTexture(String textureId) {
     setState(() => activeTextureId = textureId);
     
-    // Live update all placed nodes of the current category (Live texture Swapping Online)
     if (_placedNodes.isNotEmpty && arCoreController != null) {
       final List<ArCoreNode> nodesToRecreate = List.from(_placedNodes);
-      _placedNodes.clear(); // Clear so we don't duplicate state
+      _placedNodes.clear();
 
       for (var oldNode in nodesToRecreate) {
         final p = oldNode.position;
         final r = oldNode.rotation;
         arCoreController?.removeNode(nodeName: oldNode.name!);
-        _placeSurfaceNode(p!.value, r!.value); // Re-adds to state via _placeSurfaceNode
+        _placeSurfaceNode(p!.value, r!.value); 
       }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final t = Theme.of(context).textTheme;
+    final loc = AppLocalizations.of(context);
+    final isLocReady = loc != null;
+    
     final textureData = texturesList.firstWhere((tex) => tex['id'] == activeTextureId);
     final price = textureData['pricePerM2'] as double;
     final totalAreaM2 = _placedNodes.length * 2.25; 
@@ -131,7 +115,6 @@ class _ArScreenState extends ConsumerState<ArScreen> {
             enableTapRecognizer: true,
           ),
 
-          // Top Info & Close Button (user explicitly asked for closing buttons)
           SafeArea(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -142,11 +125,10 @@ class _ArScreenState extends ConsumerState<ArScreen> {
                     decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
                     child: IconButton(
                       icon: const Icon(Icons.close_rounded, color: Colors.white, size: 28),
-                      onPressed: () => Navigator.of(context).pop(), // Close mechanics completed
+                      onPressed: () => Navigator.of(context).pop(), 
                     ),
                   ),
                   const Spacer(),
-                  // Оптимизированное отображение логов/цен/выделенного метража ОНЛАЙН (Live)
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                     decoration: BoxDecoration(
@@ -159,7 +141,6 @@ class _ArScreenState extends ConsumerState<ArScreen> {
                       crossAxisAlignment: CrossAxisAlignment.end,
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        // Currency Switch inside AR overlay!
                         GestureDetector(
                            onTap: () => ref.read(currencyProvider.notifier).toggle(),
                            child: Row(
@@ -173,12 +154,12 @@ class _ArScreenState extends ConsumerState<ArScreen> {
                            ),
                         ),
                         const SizedBox(height: 6),
-                        Text('Выделено: ${totalAreaM2.toStringAsFixed(1)} м²', 
+                        Text('${totalAreaM2.toStringAsFixed(1)} м²', 
                            style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold)),
-                        Text('Цена материала: ${currencyFormatter.format(price)} / м²', 
+                        Text('${currencyFormatter.format(price)} / м²', 
                            style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 11)),
                         const SizedBox(height: 4),
-                        Text('ИТОГО: ${currencyFormatter.format(totalCost)}', 
+                        Text(isLocReady ? '${loc.totalLbl}: ${currencyFormatter.format(totalCost)}' : 'ИТОГО: ${currencyFormatter.format(totalCost)}', 
                            style: const TextStyle(color: AppColors.oak, fontSize: 16, fontWeight: FontWeight.w900)),
                       ],
                     ),
@@ -188,7 +169,6 @@ class _ArScreenState extends ConsumerState<ArScreen> {
             ),
           ),
 
-          // Tools / Dropdown panels mechanics
           if (_placedNodes.isNotEmpty)
             Positioned(
               top: MediaQuery.of(context).padding.top + 80,
@@ -200,7 +180,7 @@ class _ArScreenState extends ConsumerState<ArScreen> {
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                 ),
                 icon: const Icon(Icons.delete_sweep, size: 18),
-                label: const Text('Очистить AR'),
+                label: const Text('Clear'),
                 onPressed: _clearAllNodes,
               ),
             ),
