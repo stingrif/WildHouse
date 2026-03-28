@@ -1,9 +1,10 @@
 // src/modules/orders/orders.module.ts
-import { Module, Controller, Post, Get, Body, Param, Injectable } from '@nestjs/common';
+import { Module, Controller, Post, Get, Body, Param, Injectable, NotFoundException } from '@nestjs/common';
 import { TypeOrmModule, InjectRepository } from '@nestjs/typeorm';
 import { Repository, Entity, PrimaryGeneratedColumn, Column, CreateDateColumn } from 'typeorm';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiProperty } from '@nestjs/swagger';
 import { IsString, IsArray, IsNumber, IsOptional, IsBoolean, Min } from 'class-validator';
+import Stripe from 'stripe';
 
 // ── Order Entity ──────────────────────────────────────────────
 @Entity('orders')
@@ -73,6 +74,29 @@ export class OrdersService {
   async findOne(id: string) {
     return this.repo.findOne({ where: { id } });
   }
+
+  async createPaymentIntent(orderId: string) {
+    const order = await this.repo.findOne({ where: { id: orderId } });
+    if (!order) throw new NotFoundException('Order not found');
+
+    const stripeSecret = process.env.STRIPE_SECRET_KEY || 'sk_test_mock';
+    const stripe = new Stripe(stripeSecret, { apiVersion: '2024-04-10' as any });
+    
+    // Stripe takes smallest currency unit (cents/agorot)
+    const amountCoins = Math.round(order.totalInclVat * 100);
+
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: amountCoins,
+      currency: 'ils',
+      metadata: { orderId: order.id },
+      automatic_payment_methods: { enabled: true },
+    });
+
+    return {
+      clientSecret: paymentIntent.client_secret,
+      publishableKey: process.env.STRIPE_PUBLISHABLE_KEY || 'pk_test_mock',
+    };
+  }
 }
 
 // ── Controller ────────────────────────────────────────────────
@@ -99,6 +123,12 @@ export class OrdersController {
   @ApiOperation({ summary: 'Get order by id' })
   findOne(@Param('id') id: string) {
     return this.ordersService.findOne(id);
+  }
+
+  @Post(':id/payment-intent')
+  @ApiOperation({ summary: 'Generate Stripe Payment Intent for secure checkout' })
+  createPaymentIntent(@Param('id') id: string) {
+    return this.ordersService.createPaymentIntent(id);
   }
 }
 

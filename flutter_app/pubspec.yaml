@@ -22,7 +22,7 @@ dependencies:
 
   # AR
   arcore_flutter_plugin: ^0.1.0   # Android ARCore
-  # arkit_plugin: ^2.0.0          # iOS ARKit — v2, добавить при iOS-этапе
+  arkit_plugin: ^2.0.0            # iOS ARKit
 
   # Network
   dio: ^5.4.3
@@ -46,6 +46,7 @@ dependencies:
   # Camera / permissions
   permission_handler: ^11.3.1
   camera: ^0.11.0+2
+  file_picker: ^8.1.4
 
   # Auth
   firebase_core: ^3.3.0

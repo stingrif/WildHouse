@@ -1,8 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'dart:io';
+import 'package:file_picker/file_picker.dart';
+import 'package:dio/dio.dart';
 import '../../../core/constants/app_colors.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/providers/app_providers.dart';
+import '../../../core/providers/catalog_provider.dart';
+import '../../../shared/models/models.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/router/app_router.dart';
 import 'package:flutter_gen/gen_l10n/app_localizations.dart';
@@ -23,15 +28,8 @@ class _CalculatorScreenState extends ConsumerState<CalculatorScreen> {
   bool _tokenDiscount  = false;
   bool _isParsingPdf   = false; 
   String? _parsedPdfLog;
-
-  final List<Map<String, dynamic>> _catalogItems = [
-    {'name': 'Дуб Нордик (Паркет)', 'price': 85.0},
-    {'name': 'Орех Премиум (Паркет)', 'price': 120.0},
-    {'name': 'Графит (Стеновые панели)', 'price': 90.0},
-    {'name': 'Белый матовый (Потолок)', 'price': 55.0},
-    {'name': 'Электрический (Подогрев)', 'price': 150.0},
-  ];
-  late Map<String, dynamic> _selectedItem = _catalogItems.first;
+  
+  Product? _selectedItem;
 
   static const double _installPriceSmall = 700;
   static const double _installPriceLarge = 1000;
@@ -46,7 +44,7 @@ class _CalculatorScreenState extends ConsumerState<CalculatorScreen> {
   }
 
   double get _areaWithWaste => _area * (1 + _waste);
-  double get _materialCost => _areaWithWaste * (_selectedItem['price'] as double);
+  double get _materialCost => _areaWithWaste * (_selectedItem?.pricePerM2 ?? 0);
 
   double get _installCost {
     if (!_includeInstall) return 0;
@@ -58,22 +56,49 @@ class _CalculatorScreenState extends ConsumerState<CalculatorScreen> {
   double get _vat => _includeVat ? (_subtotal - _discount) * _vatRate : 0;
   double get _total => _subtotal - _discount + _vat;
 
-  void _simulatePdfUpload() async {
-    setState(() { _isParsingPdf = true; _parsedPdfLog = 'Loading...'; });
+  void _uploadPdfPlan() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['pdf'],
+    );
     
-    await Future.delayed(const Duration(seconds: 2));
+    if (result == null || result.files.single.path == null) return;
     
-    setState(() {
-      _isParsingPdf = false;
-      _lengthCtrl.text = '6.0';
-      _widthCtrl.text = '4.5';
-      _parsedPdfLog = 'План успешо распознан! [ru, he]\nШирина: 4.5м, Длина: 6.0м';
-    });
+    final file = File(result.files.single.path!);
+    setState(() { _isParsingPdf = true; _parsedPdfLog = 'Анализ: OCR & NLP...'; });
     
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(_parsedPdfLog!), backgroundColor: AppColors.moss, duration: const Duration(seconds: 4))
-      );
+    try {
+      final dio = ref.read(dioProvider);
+      final formData = FormData.fromMap({
+        'file': await MultipartFile.fromFile(file.path, filename: 'plan.pdf'),
+      });
+      
+      final response = await dio.post('media/parse-plan', data: formData);
+      final apiResponse = response.data;
+      
+      if (apiResponse['status'] == 'success' || apiResponse['status'] == 'partial') {
+        final data = apiResponse['data'];
+        setState(() {
+           _parsedPdfLog = apiResponse['parsedLog'] as String;
+           _widthCtrl.text = data['widthMeters'].toString();
+           _lengthCtrl.text = data['lengthMeters'].toString();
+        });
+      }
+    } on DioException catch (e) {
+      setState(() {
+        _parsedPdfLog = 'Ошибка соединения с AI-сервером: ${e.message}';
+      });
+    } catch (e) {
+      setState(() {
+        _parsedPdfLog = 'Ошибка парсера: $e';
+      });
+    } finally {
+      setState(() => _isParsingPdf = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(_parsedPdfLog ?? ''), backgroundColor: AppColors.moss, duration: const Duration(seconds: 4))
+        );
+      }
     }
   }
 
@@ -85,6 +110,7 @@ class _CalculatorScreenState extends ConsumerState<CalculatorScreen> {
     
     final currencyType = ref.watch(currencyProvider);
     final currencyFormatter = ref.read(currencyProvider.notifier);
+    final productsAsync = ref.watch(catalogListProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -116,8 +142,8 @@ class _CalculatorScreenState extends ConsumerState<CalculatorScreen> {
           ElevatedButton.icon(
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.oakLight, foregroundColor: AppColors.walnut),
             icon: _isParsingPdf ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.picture_as_pdf),
-            label: Text(_isParsingPdf ? '...' : loc.pdfUploadBtn),
-            onPressed: _isParsingPdf ? null : _simulatePdfUpload,
+            label: Text(_isParsingPdf ? 'Обработка AI...' : loc.pdfUploadBtn),
+            onPressed: _isParsingPdf ? null : _uploadPdfPlan,
           ),
           if (_parsedPdfLog != null)
             Padding(
@@ -147,21 +173,33 @@ class _CalculatorScreenState extends ConsumerState<CalculatorScreen> {
 
           Text(loc.catalogOnlineItem, style: t.titleLarge),
           const SizedBox(height: 12),
-          DropdownButtonFormField<Map<String, dynamic>>(
-            value: _selectedItem,
-            decoration: const InputDecoration(
-               border: OutlineInputBorder(),
-               contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 8)
-            ),
-            items: _catalogItems.map((item) {
-              return DropdownMenuItem(
-                value: item,
-                child: Text('${item['name']} — ${currencyFormatter.format(item['price'])} / м²'),
-              );
-            }).toList(),
-            onChanged: (val) {
-              if (val != null) setState(() => _selectedItem = val);
-            },
+          
+          productsAsync.when(
+             loading: () => const CircularProgressIndicator(color: AppColors.walnut),
+             error: (e, s) => Text('Ошибка загрузки товаров: $e'),
+             data: (products) {
+                if (_selectedItem == null && products.isNotEmpty) {
+                  _selectedItem = products.first;
+                }
+                if (products.isEmpty) return const Text('Нет доступных товаров');
+                
+                return DropdownButtonFormField<Product>(
+                  value: _selectedItem,
+                  decoration: const InputDecoration(
+                     border: OutlineInputBorder(),
+                     contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 8)
+                  ),
+                  items: products.map((item) {
+                    return DropdownMenuItem(
+                      value: item,
+                      child: Text('${item.name} — ${currencyFormatter.format(item.pricePerM2)} / м²'),
+                    );
+                  }).toList(),
+                  onChanged: (val) {
+                    if (val != null) setState(() => _selectedItem = val);
+                  },
+                );
+             }
           ),
 
           const SizedBox(height: 24),
@@ -184,7 +222,7 @@ class _CalculatorScreenState extends ConsumerState<CalculatorScreen> {
 
           AnimatedSwitcher(
             duration: const Duration(milliseconds: 300),
-            child: hasArea
+            child: (hasArea && _selectedItem != null)
                 ? _ResultCard(
                     area: _areaWithWaste,
                     materialCost: _materialCost,
@@ -192,22 +230,22 @@ class _CalculatorScreenState extends ConsumerState<CalculatorScreen> {
                     discount: _discount,
                     vat: _vat,
                     total: _total,
-                    selectedItemName: _selectedItem['name'],
+                    selectedItemName: _selectedItem!.name,
                     formatter: currencyFormatter.format,
                   )
                 : const SizedBox.shrink(),
           ),
 
           const SizedBox(height: 24),
-          if (hasArea)
+          if (hasArea && _selectedItem != null)
             ElevatedButton(
               onPressed: () {
                 ref.read(cartProvider.notifier).addToCart(CartItemModel(
                     id: DateTime.now().millisecondsSinceEpoch.toString(),
-                    name: _selectedItem['name'],
-                    brand: 'Wild House',
+                    name: _selectedItem!.name,
+                    brand: _selectedItem!.brand,
                     area: _areaWithWaste,
-                    pricePerM2: _selectedItem['price'],
+                    pricePerM2: _selectedItem!.pricePerM2,
                     installIncluded: _includeInstall,
                     installPrice: _installCost,
                 ));

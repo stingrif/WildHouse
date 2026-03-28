@@ -1,15 +1,21 @@
 // lib/features/orders/screens/order_screen.dart
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:flutter_stripe/flutter_stripe.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:dio/dio.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/router/app_router.dart';
+import '../../../core/providers/app_providers.dart';
+import '../../../core/providers/catalog_provider.dart';
 
-class OrderScreen extends StatefulWidget {
+class OrderScreen extends ConsumerStatefulWidget {
   const OrderScreen({super.key});
-  @override State<OrderScreen> createState() => _OrderScreenState();
+  @override 
+  ConsumerState<OrderScreen> createState() => _OrderScreenState();
 }
 
-class _OrderScreenState extends State<OrderScreen> {
+class _OrderScreenState extends ConsumerState<OrderScreen> {
   final _addressCtrl = TextEditingController();
   DateTime? _installDate;
   String _paymentMethod = 'card';
@@ -25,11 +31,74 @@ class _OrderScreenState extends State<OrderScreen> {
     if (d != null) setState(() => _installDate = d);
   }
 
-  void _placeOrder() async {
+  Future<void> _placeOrder() async {
+    final cart = ref.read(cartProvider);
+    if (cart.isEmpty) return;
+    if (_addressCtrl.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Укажите адрес')));
+      return;
+    }
+
     setState(() => _loading = true);
-    await Future.delayed(const Duration(seconds: 2)); // TODO: API call
-    setState(() => _loading = false);
-    if (mounted) context.go(AppRoutes.orderSuccess);
+
+    try {
+      final dio = ref.read(dioProvider);
+
+      // 1. Create order on backend
+      final lines = cart.map((c) => {
+        'productId': c.id, 
+        'areaM2': c.area, 
+        'includeInstallation': c.installIncluded
+      }).toList();
+
+      final orderRes = await dio.post('orders', data: {
+        'lines': lines,
+        'address': _addressCtrl.text,
+        'installDate': _installDate?.toIso8601String(),
+        'paymentMethod': _paymentMethod
+      });
+      final orderId = orderRes.data['id'];
+
+      // 2. Crypto bypass vs Stripe processing
+      if (_paymentMethod == 'crypto') {
+        // Handle Crypto 
+        ref.read(cartProvider.notifier).clearCart();
+        if (mounted) context.go(AppRoutes.orderSuccess);
+        return;
+      }
+
+      // 3. Obtain Stripe Payment Intent
+      final intentRes = await dio.post('orders/$orderId/payment-intent');
+      final clientSecret = intentRes.data['clientSecret'];
+      final pubKey = intentRes.data['publishableKey'];
+
+      Stripe.publishableKey = pubKey;
+
+      // 4. Initialize Payment Sheet
+      await Stripe.instance.initPaymentSheet(
+        paymentSheetParameters: SetupPaymentSheetParameters(
+          paymentIntentClientSecret: clientSecret,
+          merchantDisplayName: 'Wild House',
+          style: ThemeMode.light,
+        ),
+      );
+
+      // 5. Present Sheet to user
+      await Stripe.instance.presentPaymentSheet();
+
+      // 6. Success
+      ref.read(cartProvider.notifier).clearCart();
+      if (mounted) context.go(AppRoutes.orderSuccess);
+
+    } on StripeException catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Оплата отменена: ${e.error.message}')));
+    } on DioException catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Ошибка сервера: ${e.message}')));
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Ошибка: $e')));
+    } finally {
+      setState(() => _loading = false);
+    }
   }
 
   @override
@@ -81,7 +150,7 @@ class _OrderScreenState extends State<OrderScreen> {
           _PaymentOption(
             icon: Icons.credit_card_rounded,
             label: 'Банковская карта',
-            subtitle: 'Visa / Mastercard / Tranzila',
+            subtitle: 'Visa / Mastercard / Apple Pay',
             value: 'card',
             selected: _paymentMethod,
             onTap: () => setState(() => _paymentMethod = 'card'),
@@ -102,7 +171,7 @@ class _OrderScreenState extends State<OrderScreen> {
             child: _loading
                 ? const SizedBox(width: 20, height: 20,
                     child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.cream))
-                : const Text('ПОДТВЕРДИТЬ ЗАКАЗ'),
+                : const Text('ПОДТВЕРДИТЬ И ОПЛАТИТЬ'),
           ),
         ],
       ),

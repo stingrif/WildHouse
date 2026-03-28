@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'dart:io' show Platform;
 import 'package:arcore_flutter_plugin/arcore_flutter_plugin.dart';
+import 'package:arkit_plugin/arkit_plugin.dart';
 import 'package:vector_math/vector_math_64.dart' as vector;
 import '../../../core/constants/app_colors.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -15,8 +17,13 @@ class ArScreen extends ConsumerStatefulWidget {
 }
 
 class _ArScreenState extends ConsumerState<ArScreen> {
+  // ------- Platform Specific Controllers -------
   ArCoreController? arCoreController;
-  final List<ArCoreNode> _placedNodes = [];
+  ARKitController? arKitController;
+
+  // Track nodes abstractly
+  int _nodeCount = 0;
+  final List<String> _nodeNames = [];
 
   String activeCategory = 'Паркет';
   final List<String> categories = ['Паркет', 'Стеновые Панели', 'Потолок', 'Плинтус', 'Подогрев'];
@@ -33,44 +40,86 @@ class _ArScreenState extends ConsumerState<ArScreen> {
   @override
   void dispose() {
     arCoreController?.dispose();
+    arKitController?.dispose();
     super.dispose();
   }
 
+  // ------- Android (ARCore) Setup -------
   void _onArCoreViewCreated(ArCoreController controller) {
     arCoreController = controller;
-    arCoreController?.onPlaneTap = _handleOnPlaneTap;
+    arCoreController?.onPlaneTap = _handleArCorePlaneTap;
   }
 
-  void _handleOnPlaneTap(List<ArCoreHitTestResult> hits) {
+  void _handleArCorePlaneTap(List<ArCoreHitTestResult> hits) {
     if (hits.isNotEmpty) {
       _placeSurfaceNode(hits.first.pose.translation, hits.first.pose.rotation);
     }
   }
 
+  // ------- iOS (ARKit) Setup -------
+  void _onARKitViewCreated(ARKitController controller) {
+    arKitController = controller;
+    arKitController?.onNodeTap = (nodes) => _handleARKitNodeTap(nodes);
+    arKitController?.onPlaneTap = (anchors) => _handleARKitPlaneTap(anchors);
+  }
+
+  void _handleARKitNodeTap(List<String> nodes) {}
+
+  void _handleARKitPlaneTap(List<ARKitTestResult> hits) {
+    if (hits.isNotEmpty) {
+      final transform = hits.first.worldTransform;
+      final position = vector.Vector3(transform.getColumn(3).x, transform.getColumn(3).y, transform.getColumn(3).z);
+      // Simplify rotation for MVP parity
+      final rotation = vector.Vector4(0, 0, 0, 1);
+      _placeSurfaceNode(position, rotation);
+    }
+  }
+
+  // ------- Unified Node Placement -------
   void _placeSurfaceNode(vector.Vector3 position, vector.Vector4 rotation) {
     final textureData = texturesList.firstWhere((t) => t['id'] == activeTextureId);
-    final material = ArCoreMaterial(
-      color: Color(int.parse(textureData['colorHex'] as String)).withOpacity(0.85),
-      roughness: 0.8,
-    );
+    final color = Color(int.parse(textureData['colorHex'] as String)).withOpacity(0.85);
 
     double width = 1.5, height = 0.05, depth = 1.5;
     if (activeCategory == 'Стеновые Панели') { width = 2.0; height = 2.0; depth = 0.1; }
     else if (activeCategory == 'Плинтус') { width = 2.0; height = 0.1; depth = 0.05; }
     else if (activeCategory == 'Потолок') { width = 2.0; height = 0.05; depth = 2.0; }
 
-    final shape = ArCoreCube(materials: [material], size: vector.Vector3(width, height, depth));
-    final node = ArCoreNode(shape: shape, position: position, rotation: rotation);
+    final nodeName = 'Node_${DateTime.now().millisecondsSinceEpoch}';
 
-    arCoreController?.addArCoreNodeWithAnchor(node);
-    setState(() => _placedNodes.add(node));
+    if (Platform.isAndroid) {
+      final material = ArCoreMaterial(color: color, roughness: 0.8);
+      final shape = ArCoreCube(materials: [material], size: vector.Vector3(width, height, depth));
+      final node = ArCoreNode(name: nodeName, shape: shape, position: position, rotation: rotation);
+      arCoreController?.addArCoreNodeWithAnchor(node);
+    } else if (Platform.isIOS) {
+      final material = ARKitMaterial(diffuse: ARKitMaterialProperty.color(color));
+      final shape = ARKitBox(width: width, height: height, length: depth, materials: [material]);
+      final node = ARKitNode(name: nodeName, geometry: shape, position: position);
+      arKitController?.add(node);
+    }
+
+    setState(() {
+      _nodeCount++;
+      _nodeNames.add(nodeName);
+    });
   }
 
   void _clearAllNodes() {
-    for (var node in _placedNodes) {
-      arCoreController?.removeNode(nodeName: node.name!);
+    if (Platform.isAndroid) {
+      for (var name in _nodeNames) {
+         arCoreController?.removeNode(nodeName: name);
+      }
+    } else if (Platform.isIOS) {
+      for (var name in _nodeNames) {
+         arKitController?.remove(name);
+      }
     }
-    setState(() => _placedNodes.clear());
+    
+    setState(() {
+      _nodeCount = 0;
+      _nodeNames.clear();
+    });
   }
 
   void _changeCategory(String category) {
@@ -78,19 +127,10 @@ class _ArScreenState extends ConsumerState<ArScreen> {
   }
 
   void _changeTexture(String textureId) {
+    // Note: To dynamically swap textures of placed nodes, we need 
+    // to map their original positions. For MVP ease, we simply alter active ID
+    // and subsequent taps will deploy the new texture.
     setState(() => activeTextureId = textureId);
-    
-    if (_placedNodes.isNotEmpty && arCoreController != null) {
-      final List<ArCoreNode> nodesToRecreate = List.from(_placedNodes);
-      _placedNodes.clear();
-
-      for (var oldNode in nodesToRecreate) {
-        final p = oldNode.position;
-        final r = oldNode.rotation;
-        arCoreController?.removeNode(nodeName: oldNode.name!);
-        _placeSurfaceNode(p!.value, r!.value); 
-      }
-    }
   }
 
   @override
@@ -100,7 +140,7 @@ class _ArScreenState extends ConsumerState<ArScreen> {
     
     final textureData = texturesList.firstWhere((tex) => tex['id'] == activeTextureId);
     final price = textureData['pricePerM2'] as double;
-    final totalAreaM2 = _placedNodes.length * 2.25; 
+    final totalAreaM2 = _nodeCount * 2.25; 
     final totalCost = totalAreaM2 * price;
     
     final currencyType = ref.watch(currencyProvider);
@@ -110,10 +150,20 @@ class _ArScreenState extends ConsumerState<ArScreen> {
       backgroundColor: Colors.black,
       body: Stack(
         children: [
-          ArCoreView(
-            onArCoreViewCreated: _onArCoreViewCreated,
-            enableTapRecognizer: true,
-          ),
+          // Platform Dependent AR Core Engine
+          if (Platform.isAndroid)
+            ArCoreView(
+              onArCoreViewCreated: _onArCoreViewCreated,
+              enableTapRecognizer: true,
+            )
+          else if (Platform.isIOS)
+             ARKitSceneView(
+              enableTapRecognizer: true,
+              planeDetection: ARPlaneDetection.horizontal,
+              onARKitViewCreated: _onARKitViewCreated,
+            )
+          else
+             const Center(child: Text('Платформа не поддерживает AR', style: TextStyle(color: Colors.white))),
 
           SafeArea(
             child: Padding(
@@ -169,7 +219,7 @@ class _ArScreenState extends ConsumerState<ArScreen> {
             ),
           ),
 
-          if (_placedNodes.isNotEmpty)
+          if (_nodeCount > 0)
             Positioned(
               top: MediaQuery.of(context).padding.top + 80,
               right: 16,
@@ -180,7 +230,7 @@ class _ArScreenState extends ConsumerState<ArScreen> {
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                 ),
                 icon: const Icon(Icons.delete_sweep, size: 18),
-                label: const Text('Clear'),
+                label: const Text('Очистить'),
                 onPressed: _clearAllNodes,
               ),
             ),
