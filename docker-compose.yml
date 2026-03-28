@@ -1,0 +1,56 @@
+version: '3.9'
+
+services:
+
+  # ── PostgreSQL ───────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: wildhouse_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER:     wildhouse
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB:       wildhouse_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wildhouse"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ── Redis ────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: wildhouse_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --save 60 1 --loglevel warning
+
+  # ── NestJS API ───────────────────────────────────────────────
+  api:
+    build:
+      context: ./nestjs_api
+      dockerfile: Dockerfile
+    container_name: wildhouse_api
+    restart: unless-stopped
+    env_file: ./nestjs_api/.env
+    ports:
+      - "3001:3001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    volumes:
+      - ./nestjs_api:/app
+      - /app/node_modules
+
+volumes:
+  postgres_data:
+  redis_data:

@@ -1,0 +1,101 @@
+name: wild_house
+description: AR Flooring & Cladding – Wild House Mobile App
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.3.0 <4.0.0'
+  flutter: '>=3.22.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+
+  # Navigation
+  go_router: ^14.2.0
+
+  # State management
+  flutter_riverpod: ^2.5.1
+  riverpod_annotation: ^2.3.5
+
+  # AR
+  arcore_flutter_plugin: ^0.1.0   # Android ARCore
+  # arkit_plugin: ^2.0.0          # iOS ARKit — v2, добавить при iOS-этапе
+
+  # Network
+  dio: ^5.4.3
+  retrofit: ^4.1.0
+
+  # Local storage
+  hive_flutter: ^1.1.0
+  shared_preferences: ^2.3.1
+
+  # UI
+  cached_network_image: ^3.3.1
+  shimmer: ^3.0.0
+  lottie: ^3.1.2
+  flutter_svg: ^2.0.10+1
+  google_fonts: ^6.2.1
+  animated_bottom_navigation_bar: ^1.3.3
+
+  # Forms & validation
+  reactive_forms: ^17.0.1
+
+  # Camera / permissions
+  permission_handler: ^11.3.1
+  camera: ^0.11.0+2
+
+  # Auth
+  firebase_core: ^3.3.0
+  firebase_auth: ^5.1.4
+  google_sign_in: ^6.2.1
+
+  # Payments
+  flutter_stripe: ^10.1.1
+
+  # Localization
+  intl: ^0.19.0
+
+  # Utils
+  equatable: ^2.0.5
+  dartz: ^0.10.1
+  logger: ^2.4.0
+  url_launcher: ^6.3.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+  build_runner: ^2.4.11
+  riverpod_generator: ^2.4.0
+  retrofit_generator: ^8.1.0
+  hive_generator: ^2.0.1
+  json_serializable: ^6.8.0
+
+flutter:
+  uses-material-design: true
+  generate: true   # для l10n
+
+  assets:
+    - assets/images/
+    - assets/textures/
+    - assets/animations/
+    - assets/icons/
+
+  fonts:
+    - family: Cormorant
+      fonts:
+        - asset: assets/fonts/Cormorant-Regular.ttf
+        - asset: assets/fonts/Cormorant-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/Cormorant-Bold.ttf
+          weight: 700
+    - family: Jost
+      fonts:
+        - asset: assets/fonts/Jost-Regular.ttf
+        - asset: assets/fonts/Jost-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Jost-Light.ttf
+          weight: 300

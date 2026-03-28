@@ -1,0 +1,66 @@
+name: Playwright E2E Tests (Mobile Simulation)
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+
+jobs:
+  e2e-tests:
+    timeout-minutes: 60
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20
+
+    - name: Set up Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: '3.22.x'
+        channel: 'stable'
+
+    - name: Start Database Services (Docker)
+      run: |
+        docker compose up -d
+      # docker-compose.yml should contain postgres and redis
+
+    - name: Start NestJS API
+      run: |
+        cd nestjs_api
+        cp .env.example .env
+        npm ci
+        npm run build
+        npm run start:prod &
+        npx wait-on tcp:3001
+      env:
+        NODE_ENV: test
+
+    - name: Build and Serve Flutter App (Web)
+      run: |
+        cd flutter_app
+        flutter pub get
+        flutter build web --web-renderer canvaskit --profile
+        npx serve -l 3000 build/web &
+        npx wait-on tcp:3000
+
+    - name: Run Playwright E2E Tests
+      run: |
+        cd e2e_tests
+        npm ci
+        npx playwright install --with-deps chromium
+        npx playwright test --project="Mobile Chrome"
+
+    - name: Upload Playwright Report
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: playwright-report
+        path: e2e_tests/playwright-report/
+        retention-days: 14
